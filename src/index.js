@@ -4,6 +4,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import Logger from "./utils/logger.js";
+import matter from "gray-matter";
+import { compile } from "@mdx-js/mdx"
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,14 +63,49 @@ const updateCounters = () => {
 };
 
 (async () => {
+
+
+	app.get('/api/parse-mdx/:fileName', async (req, res) => {
+		const { fileName } = req.params;
+
+		if (!fileName.endsWith('.mdx')) {
+			return res.status(400).json({ error: 'Invalid file format' });
+		}
+
+		const docsPath = path.join(__dirname, 'html', 'pages', 'docs', 'endpoints');
+		const filePath = path.join(docsPath, fileName);
+
+		try {
+			const fileContent = fs.readFileSync(filePath, 'utf8');
+			const { content, data } = matter(fileContent);
+			const compiledMDX = await compile(content, { outputFormat: 'function-body' });
+
+			res.json({ metadata: data, html: compiledMDX });
+		} catch (error) {
+			console.error(error)
+			res.status(500).json({ error: 'Error reading or compiling MDX' });
+		}
+	});
+
+
 	// Load Database
 	const dbModule = await import(
 		"file://" + path.join(__dirname, "utils", "modules", "database.js")
 	);
 	await dbModule.default();
 
+	app.use("/", (req, res) => {
+		if (req.path === "/") {
+			return res
+				.status(200)
+				.sendFile(path.join(__dirname, "public", "docs.html"));
+		}
+	});
+
 	app.use("/api/:path", async (req, res) => {
+		console.log("afgasofagrgarg")
 		const endpointName = req.params.path;
+		console.log(endpointName)
 		const filePath = path.join(__dirname, "api", endpointName);
 
 		if (fs.existsSync(filePath)) {
@@ -89,14 +126,6 @@ const updateCounters = () => {
 			}
 		}
 		return res.status(404).send("Endpoint not found");
-	});
-
-	app.use("/", (req, res) => {
-		if (req.path === "/") {
-			return res
-				.status(200)
-				.sendFile(path.join(__dirname, "public", "docs.html"));
-		}
 	});
 
 	app.listen(port, () =>
